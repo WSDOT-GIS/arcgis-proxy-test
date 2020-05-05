@@ -34,7 +34,7 @@ const search = new Search({
     {
       locator: {
         url:
-          "http://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer"
+          "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer"
       },
       filter: {
         geometry: waExtent
