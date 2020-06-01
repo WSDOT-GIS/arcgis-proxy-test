@@ -1,21 +1,26 @@
 import Extent from "esri/geometry/Extent";
 import EsriMap from "esri/Map";
+import FeatureSet from "esri/tasks/support/FeatureSet";
 import MapView from "esri/views/MapView";
 import Search from "esri/widgets/Search";
 import Graphic from "esri/Graphic";
 import GraphicsLayer from "esri/layers/GraphicsLayer";
 import Locator from "esri/tasks/Locator";
 import RouteTask from "esri/tasks/RouteTask";
+import RouteParameters from "esri/tasks/support/RouteParameters";
 import SimpleMarkerSymbol from "esri/symbols/SimpleMarkerSymbol";
 
 const geocodeServiceUrl =
   "https://data.wsdot.wa.gov/ArcGIS/rest/services/Shared/MultinetLocator/GeocodeServer";
 
 const routingUrl =
-  "https://utility.arcgis.com/usrsvcs/appservices/RFfbgeFrGyw0fQnJ/rest/services/World/Route/NAServer/Route_World/solve";
+  "https://utility.arcgis.com/usrsvcs/appservices/AZZsdPDHci63zVOA/rest/services/World/Route/NAServer/Route_World";
 
 const locator = new Locator({
   url: geocodeServiceUrl,
+  requestOptions: {
+    returnIntersection: true,
+  },
 });
 
 const routeTask = new RouteTask({
@@ -95,21 +100,56 @@ window.addEventListener("locate-error", (evt) => {
 });
 
 view.on("click", async (clickEvent) => {
-  let addressCandidate: __esri.AddressCandidate | undefined;
+  console.group("map click event");
   try {
-    addressCandidate = await locator.locationToAddress({
+    // TODO: Locate nearest intersection.
+    const addressCandidate = await locator.locationToAddress({
       location: clickEvent.mapPoint,
       locationType: "street",
     });
-    console;
+    console.debug("address candidate", addressCandidate);
+    const graphic = addressCandidateToGraphic(addressCandidate);
+
+    intersectionsLayer.add(graphic);
   } catch (err) {
     const customEvent = new CustomEvent("locate-error", {
       detail: err,
     });
     window.dispatchEvent(customEvent);
   }
+  console.groupEnd();
+});
 
-  const graphic = addressCandidateToGraphic(addressCandidate);
+view.on("double-click", async (evt) => {
+  if (intersectionsLayer.graphics.length < 2) {
+    console.debug("not enough intersections");
+    return;
+  }
 
-  intersectionsLayer.add(graphic);
+  const featureSet = new FeatureSet({
+    features: intersectionsLayer.graphics.toArray(),
+  });
+
+  const routeParameters = new RouteParameters({
+    stops: featureSet,
+    returnDirections: false,
+    returnRoutes: true,
+    directionsLengthUnits: "miles",
+    outSpatialReference: view.spatialReference,
+    restrictionAttributes: [
+      "Avoid Carpool Roads",
+      "Avoid Limited Access Roads",
+      "Avoid Express Lanes",
+    ],
+    doNotLocateOnRestrictedElements: true,
+    ignoreInvalidLocations: true,
+  });
+
+  try {
+    const routeResult = await routeTask.solve(routeParameters);
+
+    console.debug("route result", routeResult);
+  } catch (err) {
+    console.error("route task error", err);
+  }
 });
